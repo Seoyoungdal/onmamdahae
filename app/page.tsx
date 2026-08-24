@@ -50,7 +50,7 @@ export default function Home(){
 <small>WORSHIP TOGETHER</small>
 </span>
 </button>
-<span className="app-version">v2.2.0</span>
+<span className="app-version">v2.3.1</span>
 <nav><button className="nav-active">캘린더</button></nav>
 <div className="user-area">
 <select value={role} onChange={e=>changeRole(e.target.value as typeof role)}>
