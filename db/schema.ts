@@ -1,0 +1,4 @@
+import {integer,sqliteTable,text} from "drizzle-orm/sqlite-core";
+export const users=sqliteTable("users",{id:text("id").primaryKey(),email:text("email").notNull(),name:text("name").notNull(),role:text("role").notNull()});
+export const services=sqliteTable("services",{id:integer("id").primaryKey({autoIncrement:true}),title:text("title").notNull(),serviceDate:text("service_date").notNull(),serviceTime:text("service_time").notNull(),leaderId:text("leader_id"),playlistUrl:text("playlist_url").notNull().default(""),printKey:text("print_key"),printName:text("print_name")});
+export const songs=sqliteTable("songs",{id:integer("id").primaryKey({autoIncrement:true}),serviceId:integer("service_id").notNull(),title:text("title").notNull(),originalKey:text("original_key").notNull(),annotatedKey:text("annotated_key")});

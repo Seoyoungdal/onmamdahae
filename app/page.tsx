@@ -1,0 +1,274 @@
+"use client";
+import {useEffect,useMemo,useRef,useState} from "react";
+import {deleteDeviceScore,deleteServiceScores,getDeviceScores,saveDeviceScore} from "../lib/device-scores";
+type Assignment={part:string;name:string};
+type Service={id:number;date:string;time:string;title:string;type:string;leader?:string;tone:string;location:string;playlist:string;assignments:Assignment[];printName?:string};
+type Song={id:number;serviceId?:number;title:string;artist:string;key:string;bpm:number;file:string;version:string;updated:string;ref:string;note:string;server?:boolean;annotated?:boolean};
+const defaultAssignments:Assignment[]=[{part:"인도",name:"박은찬"},{part:"드럼",name:"최도윤"},{part:"베이스",name:"한예준"},{part:"메인건반",name:"김소망"},{part:"세컨건반",name:"오하린"},{part:"일렉기타",name:"이주원"}];
+const initialServices:Service[]=[{id:1,date:"2026-08-02",time:"오후 7:30",title:"수요예배",type:"수요",leader:"박은찬",tone:"blue",location:"본당",playlist:"",assignments:defaultAssignments},{id:2,date:"2026-08-06",time:"오후 2:00",title:"청년예배",type:"청년",leader:"김소망",tone:"orange",location:"본당",playlist:"",assignments:defaultAssignments},{id:3,date:"2026-08-09",time:"오전 11:00",title:"주일 2부예배",type:"주일",leader:"박은찬",tone:"navy",location:"본당",playlist:"",assignments:defaultAssignments}];
+const initialSongs:Song[]=[
+{id:1,title:"주님 큰 영광 받으소서",artist:"마커스워십",key:"A",bpm:132,file:"주님_큰_영광_받으소서_A.png",version:"v3",updated:"8월 21일 수정",ref:"https://youtube.com",note:"2절 후 후렴 2번, 마지막은 rit."},
+{id:2,title:"예수 열방의 소망",artist:"어노인팅",key:"D",bpm:76,file:"예수_열방의_소망_D.jpg",version:"v1",updated:"8월 18일",ref:"https://youtube.com",note:"원곡과 동일하게 진행합니다."},
+{id:3,title:"내 삶을 깨뜨립니다",artist:"WELOVE",key:"E",bpm:68,file:"내_삶을_깨뜨립니다_E.png",version:"v2",updated:"8월 20일 수정",ref:"https://youtube.com",note:"간주 4마디 후 브릿지로 진입"},
+{id:4,title:"나는 주만 높이리",artist:"제이어스",key:"G",bpm:128,file:"나는_주만_높이리_G.jpg",version:"v1",updated:"8월 17일",ref:"https://youtube.com",note:"엔딩은 후렴 첫 마디에서 컷"}];
+const holidays2026:Record<string,string>={"2026-01-01":"신정","2026-02-16":"설날 연휴","2026-02-17":"설날","2026-02-18":"설날 연휴","2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"부처님오신날","2026-05-25":"대체공휴일","2026-06-03":"지방선거일","2026-06-06":"현충일","2026-08-15":"광복절","2026-08-17":"대체공휴일","2026-09-24":"추석 연휴","2026-09-25":"추석","2026-09-26":"추석 연휴","2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"성탄절"};
+export default function Home(){
+ const[selected,setSelected]=useState<Service|null>(null),[services,setServices]=useState(initialServices),[songs,setSongs]=useState(initialSongs),[notice,setNotice]=useState(""),[role,setRole]=useState<"leader"|"member"|"admin">("member"),[memoSong,setMemoSong]=useState<number|null>(null),[calendarMonth,setCalendarMonth]=useState(new Date(2026,7,1)),[dragged,setDragged]=useState<number|null>(null),[dayPicker,setDayPicker]=useState<Service[]|null>(null),[viewer,setViewer]=useState<Array<{songId:number;title:string;url:string;kind:string}>|null>(null),[viewerIndex,setViewerIndex]=useState(0),uploadRef=useRef<HTMLInputElement>(null),printRef=useRef<HTMLInputElement>(null),songsRef=useRef(songs);
+ const monthLabel=useMemo(()=>`${calendarMonth.getFullYear()}년 ${calendarMonth.getMonth()+1}월`,[calendarMonth]);
+ useEffect(()=>{fetch("/api/bootstrap").then(async r=>{if(!r.ok)return;const d=await r.json();setRole(d.user.role);const assignments=d.assignments||[];const loadedServices=(d.services||[]).map((s:any,i:number)=>({id:s.id,date:s.service_date,time:s.service_time,title:s.title,type:s.title.replace("예배",""),leader:s.leader_name||undefined,tone:["navy","orange","mint","violet","blue"][i%5],location:s.location||"본당",playlist:s.playlist_url||"",printName:s.print_name||undefined,assignments:assignments.filter((a:any)=>a.service_id===s.id).map((a:any)=>({part:a.part,name:a.member_name}))}));if(loadedServices.length)setServices(loadedServices);const uploaded=(d.songs||[]).map((s:any)=>({id:s.id,serviceId:s.service_id,title:s.title,artist:"",key:s.song_key,bpm:s.bpm,file:s.original_name,version:`v${s.version}`,updated:new Date(s.updated_at).toLocaleDateString("ko-KR"),ref:s.reference_url,note:"",server:true,annotated:!!s.annotated_name}));if(uploaded.length)setSongs(uploaded)})},[]);
+ useEffect(()=>{songsRef.current=songs},[songs]);
+ function flash(m:string){setNotice(m);setTimeout(()=>setNotice(""),2400)}
+ function download(song:Song){const blob=new Blob([`${song.title}\n키 ${song.key} · ${song.bpm} BPM\n\n인도자 메모: ${song.note}`],{type:"text/plain;charset=utf-8"});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`${song.file}_${song.version}.txt`;a.click();URL.revokeObjectURL(url);flash("내 장치에 악보 사본을 저장했습니다.")}
+ function reorder(target:number){if(dragged===null||dragged===target)return;setSongs(current=>{const next=[...current],from=next.findIndex(s=>s.id===dragged),to=next.findIndex(s=>s.id===target);if(from<0||to<0)return current;const[item]=next.splice(from,1);next.splice(to,0,item);songsRef.current=next;return next})}
+ async function finishReorder(){if(dragged===null)return;setDragged(null);if(!selected)return;const ids=songsRef.current.filter(s=>s.server&&s.serviceId===selected.id).map(s=>s.id);const res=await fetch(`/api/services/${selected.id}/songs/order`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({songIds:ids})});flash(res.ok?"찬양 순서를 저장했습니다.":await res.text())}
+ function dragByTouch(e:React.PointerEvent){if(dragged===null)return;const target=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>("[data-song-id]");if(target)reorder(Number(target.dataset.songId))}
+ function moveSong(songId:number,direction:-1|1){if(!selected)return;const visible=songs.filter(s=>!s.server||s.serviceId===selected.id),at=visible.findIndex(s=>s.id===songId),other=visible[at+direction];if(at<0||!other)return;const next=[...songs],from=next.findIndex(s=>s.id===songId),to=next.findIndex(s=>s.id===other.id);[next[from],next[to]]=[next[to],next[from]];setSongs(next);flash("찬양 순서를 변경했습니다.")}
+ async function deleteSong(song:Song){if(!confirm(`‘${song.title}’ 악보를 삭제할까요?`))return;if(song.server){const res=await fetch(`/api/songs/${song.id}`,{method:"DELETE"});if(!res.ok){flash(await res.text());return}}await deleteDeviceScore(song.id);localStorage.removeItem(`draw-${song.id}`);localStorage.removeItem(`note-${song.id}`);setSongs(v=>v.filter(s=>s.id!==song.id));flash("악보를 삭제했습니다.")}
+ async function deleteService(){if(!selected||!confirm(`‘${selected.title}’ 예배를 삭제할까요?\n포함된 모든 곡과 악보도 함께 삭제되며 되돌릴 수 없습니다.`))return;const id=selected.id,res=await fetch(`/api/services/${id}`,{method:"DELETE"});if(!res.ok){flash(await res.text());return}await deleteServiceScores(id);setServices(v=>v.filter(s=>s.id!==id));setSongs(v=>v.filter(s=>s.serviceId!==id));setSelected(null);flash("예배와 포함된 악보를 삭제했습니다.")}
+ async function changeRole(next:"leader"|"member"|"admin"){if(next==="member"){const res=await fetch("/api/role",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:next})});if(res.ok)setRole(next);return}while(true){const password=prompt(`${next==="admin"?"관리자":"인도자"} 비밀번호를 입력해 주세요.`);if(password===null)return;const res=await fetch("/api/role",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:next,password})});if(res.ok){setRole(next);flash(`${next==="admin"?"관리자":"인도자"}로 전환했습니다.`);return}alert(await res.text())}}
+ async function fitForTablet(file:File){const img=new Image(),url=URL.createObjectURL(file);await new Promise<void>((ok,fail)=>{img.onload=()=>ok();img.onerror=()=>fail();img.src=url});const max=2400;if(Math.max(img.width,img.height)<=max){URL.revokeObjectURL(url);return file}const ratio=max/Math.max(img.width,img.height),canvas=document.createElement("canvas");canvas.width=Math.round(img.width*ratio);canvas.height=Math.round(img.height*ratio);canvas.getContext("2d")!.drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);const blob=await new Promise<Blob|null>(r=>canvas.toBlob(r,file.type,file.type==="image/jpeg"?.9:undefined));return blob?new File([blob],file.name,{type:file.type}):file}
+ async function uploadScore(file:File){if(!selected)return;flash("악보 이미지를 준비하고 있습니다.");const fitted=await fitForTablet(file);const title=prompt("곡 제목을 입력해 주세요.",file.name.replace(/\.[^.]+$/,""));if(!title)return;const youtube=prompt("이 곡의 유튜브 영상 주소를 입력해 주세요.","https://youtu.be/")||"";const form=new FormData();form.set("serviceId",String(selected.id));form.set("title",title);form.set("referenceUrl",youtube);form.set("file",fitted);const res=await fetch("/api/songs",{method:"POST",body:form});if(!res.ok){flash(await res.text());return}const s=await res.json();setSongs(v=>[...v,{id:s.id,serviceId:s.service_id,title:s.title,artist:"",key:s.song_key,bpm:s.bpm,file:s.original_name,version:`v${s.version}`,updated:"방금 업로드",ref:s.reference_url,note:"",server:true,annotated:!!s.annotated_name}]);flash(fitted.size<file.size?"큰 악보를 패드용으로 줄여 저장했습니다.":"악보를 원본 크기로 저장했습니다.")}
+ async function createService(){const title=prompt("예배 이름을 입력해 주세요.","주일예배");if(!title)return;const date=prompt("예배 날짜를 입력해 주세요. (YYYY-MM-DD)",`${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth()+1).padStart(2,"0")}-01`);if(!date)return;const time=prompt("예배 시간을 입력해 주세요.","오전 11:00");if(!time)return;const location=prompt("예배 장소를 입력해 주세요.","본당")||"본당";const playlistUrl=prompt("전체곡 유튜브 플레이리스트 주소가 있으면 입력해 주세요.","")||"";const res=await fetch("/api/services",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({title,date,time,location,playlistUrl})});if(!res.ok){flash(await res.text());return}const s=await res.json();const made:Service={id:s.id,date:s.service_date,time:s.service_time,title:s.title,type:s.title.replace("예배",""),tone:"navy",location:s.location,playlist:s.playlist_url||"",assignments:[]};setServices(v=>[...v,made]);setCalendarMonth(new Date(`${date}T00:00:00`));flash("새 예배를 달력에 저장했습니다.")}
+ async function editService(){if(!selected)return;const title=prompt("예배 이름",selected.title);if(!title)return;const date=prompt("예배 날짜 (YYYY-MM-DD)",selected.date);if(!date)return;const time=prompt("예배 시간",selected.time);if(!time)return;const location=prompt("예배 장소",selected.location)||selected.location;const leaderName=prompt("인도자 이름",selected.leader||"")||"";const playlistUrl=prompt("전체곡 유튜브 플레이리스트 주소",selected.playlist)||"";const assignments:Assignment[]=[];for(const part of ["드럼","베이스","메인건반","세컨건반","일렉기타"]){const old=selected.assignments.find(a=>a.part===part)?.name||"";const name=prompt(`${part} 담당자`,old);if(name?.trim())assignments.push({part,name:name.trim()})}if(leaderName)assignments.unshift({part:"인도",name:leaderName});const res=await fetch(`/api/services/${selected.id}`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({title,date,time,location,leaderName,playlistUrl,assignments})});if(!res.ok){flash(await res.text());return}const next={...selected,title,date,time,location,leader:leaderName||undefined,playlist:playlistUrl,assignments};setServices(v=>v.map(s=>s.id===next.id?next:s));setSelected(next);flash("예배 정보와 담당자를 저장했습니다.")}
+ async function editSong(song:Song){if(!song.server)return;const title=prompt("곡 제목",song.title);if(!title)return;const referenceUrl=prompt("유튜브 영상 주소",song.ref||"https://youtu.be/")||"";const res=await fetch(`/api/songs/${song.id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({title,referenceUrl})});if(!res.ok){flash(await res.text());return}setSongs(v=>v.map(s=>s.id===song.id&&s.server?{...s,title,ref:referenceUrl}:s));flash("곡 제목과 유튜브 링크를 저장했습니다.")}
+ async function saveSelected(next:Service){const res=await fetch(`/api/services/${next.id}`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({title:next.title,date:next.date,time:next.time,location:next.location,leaderName:next.leader||"",playlistUrl:next.playlist,assignments:next.assignments})});if(!res.ok){flash(await res.text());return false}setServices(v=>v.map(s=>s.id===next.id?next:s));setSelected(next);flash("변경 내용을 저장했습니다.");return true}
+ async function editField(field:"title"|"date"|"time"|"location"|"leader"|"playlist",label:string){if(!selected||role==="member")return;const old=field==="leader"?(selected.leader||""):selected[field],value=prompt(label,old);if(value===null||!value.trim())return;await saveSelected({...selected,[field]:value.trim()})}
+ async function editAssignment(part:string){if(!selected||role==="member")return;const old=selected.assignments.find(a=>a.part===part)?.name||"",name=prompt(`${part} 담당자 이름`,old);if(name===null)return;const assignments=selected.assignments.filter(a=>a.part!==part);if(name.trim())assignments.push({part,name:name.trim()});const next={...selected,assignments,...(part==="인도"?{leader:name.trim()||undefined}:{})};await saveSelected(next)}
+ async function uploadPrint(file:File){if(!selected)return;const form=new FormData();form.set("file",file);const res=await fetch(`/api/services/${selected.id}/print`,{method:"POST",body:form});if(!res.ok){flash(await res.text());return}const d=await res.json(),next={...selected,printName:d.print_name};setSelected(next);setServices(v=>v.map(s=>s.id===next.id?next:s));flash("출력용 악보를 원본 크기로 저장했습니다.")}
+ async function downloadToDevice(song:Song,kind:"original"|"annotated"){if(!song.server||!song.serviceId)return;const res=await fetch(`/api/songs/${song.id}/file?kind=${kind}`);if(!res.ok){flash(await res.text());return}const blob=await res.blob();await saveDeviceScore({songId:song.id,serviceId:song.serviceId,title:song.title,kind,blob,savedAt:Date.now()});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`${song.title}-${kind==="annotated"?"표시본":"원본"}.${blob.type.includes("png")?"png":"jpg"}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);flash("다운로드하고 내 악보함에도 저장했습니다.")}
+ async function downloadAllScores(){if(!selected)return;const list=songs.filter(s=>s.server&&s.serviceId===selected.id);if(!list.length){flash("다운로드할 악보가 없습니다.");return}flash(`${list.length}곡의 악보를 내려받고 있습니다.`);for(const song of list){const kind: "original"|"annotated"=song.annotated?"annotated":"original",res=await fetch(`/api/songs/${song.id}/file?kind=${kind}`);if(!res.ok)continue;await saveDeviceScore({songId:song.id,serviceId:selected.id,title:song.title,kind,blob:await res.blob(),savedAt:Date.now()})}flash("전체 악보를 이 기기에 저장했습니다. 악보 보기에서 바로 필기할 수 있습니다.")}
+ async function openScoreViewer(){if(!selected)return;const cached=await getDeviceScores(selected.id),ordered=await Promise.all(songs.filter(s=>s.server&&s.serviceId===selected.id).map(async song=>{const found=cached.find(c=>c.songId===song.id);if(!found)return null;const hasDrawing=!!localStorage.getItem(`draw-${song.id}`),blob=await mergePersonalDrawing(found.blob,song.id);return{songId:song.id,title:song.title,url:URL.createObjectURL(blob),kind:hasDrawing?"내 필기":found.kind}})),ready=ordered.filter(Boolean) as Array<{songId:number;title:string;url:string;kind:string}>;if(!ready.length){flash("먼저 곡의 ‘원’ 또는 ‘표’ 버튼으로 악보를 다운로드해 주세요.");return}setViewer(ready);setViewerIndex(0)}
+ const year=calendarMonth.getFullYear(),month=calendarMonth.getMonth(),firstDay=new Date(year,month,1).getDay(),daysInMonth=new Date(year,month+1,0).getDate(),prevMonthDays=new Date(year,month,0).getDate();
+ return <main className="app-shell">
+  <header className="topbar">
+<button className="brand" onClick={()=>setSelected(null)}>
+<span className="brand-mark">온</span>
+<span>
+<b>온맘다해</b>
+<small>WORSHIP TOGETHER</small>
+</span>
+</button>
+<nav>
+<button className="nav-active">캘린더</button>
+<button onClick={()=>flash("내 악보함은 다음 화면에서 연결됩니다.")}>내 악보함</button>
+<button onClick={()=>flash("멤버 관리 화면은 관리자에게 제공됩니다.")}>팀 멤버</button>
+</nav>
+<div className="user-area">
+<select value={role} onChange={e=>changeRole(e.target.value as typeof role)}>
+<option value="leader">인도자</option>
+<option value="member">팀원</option>
+<option value="admin">관리자</option>
+</select>
+<div className="avatar">박</div>
+<div className="user-copy">
+<b>박은찬</b>
+<span>{role==="admin"?"관리자":role==="leader"?"예배 인도자":"드럼"}</span>
+</div>
+</div>
+</header>
+  <section className="hero">
+<div>
+<span className="eyebrow">WORSHIP CALENDAR</span>
+<h1>함께 준비하는 예배,<br/>
+<em>한눈에 모아보세요.</em>
+</h1>
+<p>콘티부터 악보, 팀 편성까지. 예배의 모든 준비를 한곳에서 나눕니다.</p>
+</div>
+<div className="verse">
+<span>✦</span>
+<p>“모든 것을 품위 있게 하고<br/>질서 있게 하라”</p>
+<small>고린도전서 14:40</small>
+</div>
+</section>
+  <section className="calendar-card">
+<div className="calendar-head">
+<div className="month-nav">
+<button onClick={()=>setCalendarMonth(d=>new Date(d.getFullYear(),d.getMonth()-1,1))}>‹</button>
+<h2>{monthLabel}</h2>
+<button onClick={()=>setCalendarMonth(d=>new Date(d.getFullYear(),d.getMonth()+1,1))}>›</button>
+<button className="today" onClick={()=>setCalendarMonth(new Date(2026,7,1))}>오늘</button>
+</div>{role!=="member"&&<button className="primary" onClick={createService}>＋ 새 예배 만들기</button>}</div>
+<div className="weekdays">{["주일","월","화","수","목","금","토"].map((d,i)=>
+<span className={i===0?"sun":""} key={d}>{d}</span>)}</div>
+<div className="calendar-grid">{Array.from({length:42},(_,i)=>{const current=i-firstDay+1,inMonth=current>=1&&current<=daysInMonth,day=inMonth?current:current<1?prevMonthDays+current:current-daysInMonth,dateKey=`${year}-${String(month+1).padStart(2,"0")}-${String(current).padStart(2,"0")}`,dayServices=inMonth?services.filter(s=>s.date===dateKey):[],holiday=inMonth?holidays2026[dateKey]:undefined;return <div className={`day ${!inMonth?"muted":""} ${holiday?"holiday-day":""} ${inMonth&&year===2026&&month===7&&day===24?"current":""}`} key={i}>
+<button className="date date-button" onClick={()=>dayServices.length&&setDayPicker(dayServices)} disabled={!dayServices.length}>{day}</button>{holiday&&<span className="holiday-name" title={holiday}>{holiday}</span>}{dayServices.slice(0,2).map(svc=>
+<button className={`event ${svc.tone}`} onClick={()=>setSelected(svc)} key={svc.id}>
+<strong>{svc.title}</strong>
+</button>)}{dayServices.length>2&&<button className="more-events" onClick={()=>setDayPicker(dayServices)}>… 외 {dayServices.length-2}개</button>}</div>})}</div>
+</section>
+  <footer>
+<span>© 2026 온맘다해 예배팀</span>
+<span>이번 달 예배 <b>8</b>회 · 함께하는 팀원 <b>24</b>명</span>
+</footer>
+  {dayPicker&&<div className="modal-back" onClick={()=>setDayPicker(null)}>
+<div className="day-modal" onClick={e=>e.stopPropagation()}>
+<span className="eyebrow">WORSHIP ON THIS DAY</span>
+<h2>{new Date(`${dayPicker[0].date}T00:00:00`).toLocaleDateString("ko-KR")}</h2>{dayPicker.map(s=>
+<button key={s.id} className={`day-modal-event ${s.tone}`} onClick={()=>{setDayPicker(null);setSelected(s)}}>
+<b>{s.title}</b>
+<span>{s.location}{s.leader?` · 인도 ${s.leader}`:""}</span>
+</button>)}<button className="outline close-day" onClick={()=>setDayPicker(null)}>닫기</button>
+</div>
+</div>}
+  {selected&&<div className="detail-layer">
+<div className="detail-top">
+<button className="back" onClick={()=>setSelected(null)}>← 캘린더로 돌아가기</button>
+<div className="detail-actions">
+<span className="lock">● {selected.leader?`${selected.leader} 인도자 편집 중`:"인도자 미지정 · 공동 편집 가능"}</span>{selected.playlist?<a className="outline playlist-link" href={selected.playlist} target="_blank" rel="noreferrer">▶ 플레이리스트 재생</a>:<span className="playlist-empty">플레이리스트 미등록</span>}{role!=="member"&&<><button className="outline" onClick={()=>editField("playlist","유튜브 플레이리스트 주소")}>✎ 플레이리스트 수정</button><button className="outline service-delete" onClick={deleteService}>예배 삭제</button></>}<button className="primary" onClick={()=>{navigator.clipboard?.writeText(location.href);flash("팀 공유 링크를 복사했습니다.")}}>팀에 공유</button>
+</div>
+</div>
+<div className="detail-wrap">
+   <div className="service-title">
+<button className="date-block editable" onClick={()=>editField("date","예배 날짜 (YYYY-MM-DD)")}>
+<b>{Number(selected.date.slice(-2))}</b>
+<span>{selected.date.slice(5,7)}월<br/>{new Date(`${selected.date}T00:00:00`).toLocaleDateString("ko-KR",{weekday:"short"})}</span>
+</button>
+<div>
+<span className="eyebrow">{selected.type.toUpperCase()} WORSHIP</span>
+<button className="inline-title editable" onClick={()=>editField("title","예배 이름")}>{selected.title}</button>
+<p>
+<button className="inline-edit editable" onClick={()=>editField("time","예배 시간")}>{selected.time}</button> · <button className="inline-edit editable" onClick={()=>editField("location","예배 장소")}>{selected.location}</button>
+</p>
+</div>
+</div>
+   <section className="crew-section">
+<div className="section-label">
+<span>01</span>
+<div>
+<h2>함께 섬기는 사람들</h2>
+<p>{role!=="member"?"담당자 카드를 누르면 바로 수정할 수 있습니다.":"각자의 자리에서 한 마음으로 준비합니다."}</p>
+</div>
+</div>
+<div className="crew-grid">{[{part:"인도",label:"인도",icon:"🎤"},{part:"드럼",label:"드럼",icon:"🥁"},{part:"베이스",label:"베이스기타",icon:"🎸"},{part:"메인건반",label:"메인건반",icon:"🎹"},{part:"세컨건반",label:"세컨건반",icon:"🎹"},{part:"일렉기타",label:"일렉기타",icon:"🎸"}].map(({part,label,icon},i)=>{const name=(selected.assignments.length?selected.assignments:defaultAssignments).find(a=>a.part===part)?.name||"미정";return <button className="crew-card editable" key={part} onClick={()=>editAssignment(part)}>
+<div className="crew-avatar part-icon" aria-hidden="true">{icon}</div>
+<div>
+<span>{label}</span>
+<b>{name}</b>
+</div>{i===0&&<small>LEADER</small>}</button>})}</div>
+</section>
+   <section className="songs-section">
+<div className="section-label">
+<span>02</span>
+<div>
+<h2>찬양 콘티</h2>
+<p>다운로드한 악보는 예배 순서대로 쓸어 넘겨 볼 수 있습니다.</p>
+</div>
+<div className="score-controls"><button className="outline download-all" onClick={downloadAllScores}>↓ 전체 다운로드</button><button className="primary score-view-button" onClick={openScoreViewer}>▣ 악보 보기</button>{role!=="member"&&<>
+<input ref={uploadRef} className="hidden-file" type="file" accept="image/jpeg,image/png" onChange={e=>{const f=e.target.files?.[0];if(f)uploadScore(f);e.target.value=""}}/>
+<button className="outline upload" onClick={()=>uploadRef.current?.click()}>↑ 악보 업로드</button>
+</>}</div></div>
+<div className="song-list">{songs.filter(song=>!song.server||song.serviceId===selected.id).map((song,index)=>
+<article className={`song compact-song ${dragged===song.id?"song-dragging":""}`} data-song-id={song.id} key={`${song.server?"s":"d"}-${song.id}`} onDoubleClick={()=>role!=="member"&&editSong(song)} draggable={role!=="member"} onDragStart={()=>setDragged(song.id)} onDragEnd={finishReorder} onDragOver={e=>e.preventDefault()} onDrop={()=>reorder(song.id)}>
+<button className="grip" aria-label={`${song.title} 순서 이동`} onPointerDown={e=>{if(role==="member")return;e.currentTarget.setPointerCapture(e.pointerId);setDragged(song.id);navigator.vibrate?.(25)}} onPointerMove={dragByTouch} onPointerUp={finishReorder} onPointerCancel={finishReorder}>☰</button>
+<span className="order">{String(index+1).padStart(2,"0")}</span>
+<div className="song-main">
+<h3>{song.title} <em className="version-badge">{song.version}</em></h3>
+<p>{song.server?"다운로드하면 내 악보함에 저장됩니다":"샘플 악보"}</p>
+</div>
+<div className="file-box">
+<div className="pdf">IMG</div>
+<div>
+<b>{song.file}</b>
+<span>
+<em>{song.version}</em> · {song.updated}</span>
+</div>
+</div>
+<div className="song-actions">{song.ref?<a href={song.ref} target="_blank" rel="noreferrer" title="유튜브 영상 재생">▶</a>:<button disabled title="유튜브 링크 없음">▶</button>}<button onClick={()=>setMemoSong(song.id)} title="악보 위에 그리기">✎</button>{song.server?<>
+<button className="download" onClick={()=>downloadToDevice(song,"original")} title="원본 다운로드 및 내 악보함 저장">원</button>{song.annotated&&<button className="download marked" onClick={()=>downloadToDevice(song,"annotated")} title="표시본 다운로드 및 내 악보함 저장">표</button>}</>:<button className="download" onClick={()=>download(song)}>↓</button>}{role!=="member"&&<button className="score-delete" onClick={()=>deleteSong(song)} title="이 곡과 악보 삭제">삭제</button>}</div>
+</article>)}</div>
+<div className="print-score">
+<div>
+<b>출력용 악보</b>
+<p>축소하지 않은 원본 크기로 보관하고 다운로드합니다.</p>{selected.printName&&<span>✓ {selected.printName}</span>}</div>
+<input ref={printRef} className="hidden-file" type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f)uploadPrint(f);e.target.value=""}}/>{role!=="member"&&<button className="outline" onClick={()=>printRef.current?.click()}>출력용 원본 업로드</button>}{selected.printName&&<a className="primary print-download" href={`/api/services/${selected.id}/print`}>출력용 악보 다운로드</a>}</div>
+<div className="tip">
+<b>기기 내 악보함</b>
+<p>‘원’ 또는 ‘표’를 누르면 파일 다운로드와 동시에 이 기기에도 보관됩니다.</p>
+</div>
+</section>
+  </div>
+</div>}
+  {memoSong&&<DrawingSheet song={songs.find(s=>s.id===memoSong)!} canShare={role!=="member"} onShared={()=>setSongs(v=>v.map(s=>s.id===memoSong&&s.server?{...s,annotated:true,version:`v${Number(s.version.slice(1)||1)+1}`} :s))} onClose={()=>setMemoSong(null)} onSave={()=>{setMemoSong(null);flash("글과 드로잉을 이 장치에 저장했습니다.")}}/>}{viewer&&<ScoreViewer items={viewer} index={viewerIndex} setIndex={setViewerIndex} onEdit={songId=>{viewer.forEach(v=>URL.revokeObjectURL(v.url));setViewer(null);setMemoSong(songId)}} onClose={()=>{viewer.forEach(v=>URL.revokeObjectURL(v.url));setViewer(null)}}/>}{notice&&<div className="toast">✓ {notice}</div>}
+ </main>
+}
+
+function DrawingSheet({song,canShare,onShared,onClose,onSave}:{song:Song;canShare:boolean;onShared:()=>void;onClose:()=>void;onSave:()=>void}){
+ const canvasRef=useRef<HTMLCanvasElement>(null),[color,setColor]=useState("#e45f3d"),[size,setSize]=useState(4),[drawing,setDrawing]=useState(false),[note,setNote]=useState(""),[zoom,setZoom]=useState(100);
+ useEffect(()=>{const c=canvasRef.current;if(!c)return;const saved=localStorage.getItem(`draw-${song.id}`),savedNote=localStorage.getItem(`note-${song.id}`);if(saved){const img=new Image();img.onload=()=>c.getContext("2d")?.drawImage(img,0,0,c.width,c.height);img.src=saved}if(savedNote)setNote(savedNote)},[song.id]);
+ function point(e:React.PointerEvent<HTMLCanvasElement>){const c=canvasRef.current!,r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*(c.width/r.width),y:(e.clientY-r.top)*(c.height/r.height)}}
+ function start(e:React.PointerEvent<HTMLCanvasElement>){e.currentTarget.setPointerCapture(e.pointerId);const ctx=e.currentTarget.getContext("2d")!,p=point(e);ctx.beginPath();ctx.moveTo(p.x,p.y);setDrawing(true)}
+ function move(e:React.PointerEvent<HTMLCanvasElement>){if(!drawing)return;const ctx=e.currentTarget.getContext("2d")!,p=point(e);ctx.lineTo(p.x,p.y);ctx.strokeStyle=color;ctx.lineWidth=size;ctx.lineCap="round";ctx.lineJoin="round";ctx.stroke()}
+ function save(){const c=canvasRef.current!;localStorage.setItem(`draw-${song.id}`,c.toDataURL());localStorage.setItem(`note-${song.id}`,note);onSave()}
+ function clear(){canvasRef.current?.getContext("2d")?.clearRect(0,0,900,1200)}
+ async function share(){if(!song.server)return;const c=canvasRef.current!,out=document.createElement("canvas");out.width=c.width;out.height=c.height;const ctx=out.getContext("2d")!;ctx.fillStyle="#fffdf7";ctx.fillRect(0,0,out.width,out.height);const img=document.querySelector<HTMLImageElement>(`.score-image[data-song="${song.id}"]`);if(img?.complete)ctx.drawImage(img,0,0,out.width,out.height);ctx.drawImage(c,0,0);const blob=await new Promise<Blob|null>(r=>out.toBlob(r,"image/png"));if(!blob)return;const form=new FormData();form.set("file",new File([blob],`${song.title}-표시본.png`,{type:"image/png"}));const res=await fetch(`/api/songs/${song.id}/annotate`,{method:"POST",body:form});if(!res.ok){alert(await res.text());return}onShared();onClose()}
+ return <div className="draw-layer">
+<header>
+<button className="back" onClick={onClose}>← 악보 목록</button>
+<div>
+<span>나만의 필기 · 인도자 공유본</span>
+</div>
+<div className="draw-save-actions">{canShare&&song.server&&<button className="outline" onClick={share}>팀에 표시본 공유</button>}<button className="primary" onClick={save}>내 장치에 저장</button>
+</div>
+</header>
+<div className="draw-body">
+<aside>
+<span className="eyebrow">DRAWING TOOLS</span>
+<h2>악보에 표시하기</h2>
+<p>애플펜슬, 스타일러스, 손가락과 마우스를 모두 사용할 수 있습니다.</p>
+<label>펜 색상</label>
+<div className="colors">{["#e45f3d","#243a5e","#e6b934","#2d9664"].map(c=>
+<button key={c} onClick={()=>setColor(c)} className={color===c?"chosen":""} style={{background:c}} aria-label={`${c} 색상`}/>)}</div>
+<label>펜 굵기</label>
+<input type="range" min="2" max="16" value={size} onChange={e=>setSize(+e.target.value)}/>
+<button className="clear-draw" onClick={clear}>필기 모두 지우기</button>
+<div className="zoom-tools"><button onClick={()=>setZoom(z=>Math.max(50,z-25))} aria-label="축소">−</button><b>{zoom}%</b><button onClick={()=>setZoom(z=>Math.min(200,z+25))} aria-label="확대">＋</button><button onClick={()=>setZoom(100)}>화면 맞춤</button></div>
+<label>글 메모</label>
+<textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="연주할 때 기억할 내용을 적어주세요."/>
+</aside>
+<div className="sheet-scroll">
+<div className="music-sheet" style={{width:`${zoom}%`,maxWidth:zoom===100?"760px":"none"}}>{song.server&&<img className="score-image" data-song={song.id} src={`/api/songs/${song.id}/file?kind=original`} alt={`${song.title} 원본 악보`}/>} {!song.server&&<div className="sheet-title">
+<small>ONMAMDAHAE WORSHIP · KEY {song.key}</small>
+<h1>{song.title}</h1>
+<p>{song.artist} · {song.bpm} BPM</p>
+</div>}<div className="staffs">{!song.server&&Array.from({length:9},(_,i)=>
+<div className="staff" key={i}>
+<b>{i%3===0?"G":i%3===1?"Em7":"C2"}</b>
+<span>♪ ♩ ♫　♩ ♪　♫ ♩　♪ ♩</span>
+<small>{i%2===0?"주 님 의　사 랑 을　노 래 합 니 다":"마 음 을　다 하 여　주 를 높 이 리"}</small>
+</div>)}</div>
+<canvas ref={canvasRef} width="900" height="1200" onPointerDown={start} onPointerMove={move} onPointerUp={()=>setDrawing(false)} onPointerCancel={()=>setDrawing(false)}/>
+</div>
+</div>
+</div>
+</div>
+}
+
+function ScoreViewer({items,index,setIndex,onEdit,onClose}:{items:Array<{songId:number;title:string;url:string;kind:string}>;index:number;setIndex:(n:number)=>void;onEdit:(songId:number)=>void;onClose:()=>void}){
+ const startX=useRef(0),touchStartX=useRef(0),[zoom,setZoom]=useState(100),next=()=>{setZoom(100);setIndex(Math.min(items.length-1,index+1))},prev=()=>{setZoom(100);setIndex(Math.max(0,index-1))};
+ useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==="ArrowRight"||e.key===" ")next();if(e.key==="ArrowLeft")prev();if(e.key==="Escape")onClose()};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key)});
+ return <div className="score-viewer" onPointerDown={e=>{if(e.pointerType!=="touch")startX.current=e.clientX}} onPointerUp={e=>{if(e.pointerType==="touch")return;const dx=e.clientX-startX.current;if(dx<-45)next();if(dx>45)prev()}} onTouchStart={e=>touchStartX.current=e.changedTouches[0].clientX} onTouchEnd={e=>{if(zoom!==100)return;const dx=e.changedTouches[0].clientX-touchStartX.current;if(dx<-35)next();if(dx>35)prev()}}>
+<header>
+<button onClick={onClose}>✕ 닫기</button>
+<div>
+<b>{index+1} / {items.length}</b>
+<span>{items[index].title} · {items[index].kind==="annotated"?"표시본":items[index].kind==="내 필기"?"내 필기":"원본"}</span>
+</div>
+<span>쓸어 넘기기 · 더블클릭하여 수정</span>
+<div className="viewer-zoom"><button onClick={()=>setZoom(z=>Math.max(50,z-25))} aria-label="악보 축소">−</button><b>{zoom}%</b><button onClick={()=>setZoom(z=>Math.min(250,z+25))} aria-label="악보 확대">＋</button></div>
+</header>
+<div className="score-stage" style={{touchAction:zoom===100?"pan-y":"pan-x pan-y"}}>
+<button className="viewer-arrow left" onClick={prev} disabled={index===0}>‹</button>
+<img src={items[index].url} alt={items[index].title} draggable={false} onDoubleClick={()=>onEdit(items[index].songId)} style={{transform:`scale(${zoom/100})`}}/>
+<button className="viewer-arrow right" onClick={next} disabled={index===items.length-1}>›</button>
+</div>
+<footer>{items.map((item,i)=>
+<button key={item.title+i} className={i===index?"active":""} onClick={()=>setIndex(i)}>{i+1}</button>)}</footer>
+</div>
+}
+
+async function mergePersonalDrawing(base:Blob,songId:number){
+ const drawing=localStorage.getItem(`draw-${songId}`);if(!drawing)return base;
+ const load=(src:string)=>new Promise<HTMLImageElement>((ok,fail)=>{const img=new Image();img.onload=()=>ok(img);img.onerror=()=>fail(new Error("악보 이미지를 불러오지 못했습니다."));img.src=src}),baseUrl=URL.createObjectURL(base);
+ try{const [score,marks]=await Promise.all([load(baseUrl),load(drawing)]),out=document.createElement("canvas");out.width=900;out.height=1200;const ctx=out.getContext("2d")!;ctx.fillStyle="#fff";ctx.fillRect(0,0,out.width,out.height);const scale=Math.min(out.width/score.naturalWidth,out.height/score.naturalHeight),w=score.naturalWidth*scale,h=score.naturalHeight*scale;ctx.drawImage(score,(out.width-w)/2,(out.height-h)/2,w,h);ctx.drawImage(marks,0,0,out.width,out.height);return await new Promise<Blob>(resolve=>out.toBlob(blob=>resolve(blob||base),"image/png"))}finally{URL.revokeObjectURL(baseUrl)}
+}
+
