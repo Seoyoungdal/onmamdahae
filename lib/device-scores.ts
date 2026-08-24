@@ -1,4 +1,4 @@
-export type DeviceScore={songId:number;serviceId:number;title:string;kind:"original"|"annotated";blob:Blob;savedAt:number;version?:string};
+export type DeviceScore={songId:number;serviceId:number;title:string;kind:"original"|"annotated";blob:Blob;savedAt:number;version?:string;renderVersion?:string};
 const DB_NAME="onmaeum-device-scores",STORE="scores";
 function openDb(){return new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:"songId"})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 export async function saveDeviceScore(score:DeviceScore){const db=await openDb();await new Promise<void>((resolve,reject)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).put(score);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});db.close()}
