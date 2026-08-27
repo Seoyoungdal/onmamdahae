@@ -41,3 +41,6 @@
 .version-check-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
 .version-check-actions button{min-height:46px;padding:0 17px}
 @media(max-width:520px){.version-check-modal{padding:23px 20px}.version-check-actions{display:grid;grid-template-columns:1fr 1.45fr}.version-check-actions button{padding:0 8px;font-size:13px}}
+.viewer-arrow{width:40px;height:64px;background:#1118;font-size:36px;opacity:.14;animation:viewerArrowFade 2.4s ease-out;transition:opacity .2s}
+.score-stage:hover .viewer-arrow,.viewer-arrow:focus-visible{opacity:.72}
+@keyframes viewerArrowFade{0%,45%{opacity:.72}100%{opacity:.14}}
