@@ -52,7 +52,7 @@ export default function Home(){
 <small>WORSHIP TOGETHER</small>
 </span>
 </button>
-<span className="app-version">v2.4.0</span>
+<span className="app-version">v2.4.1</span>
 <nav><button className="nav-active">캘린더</button></nav>
 <div className="user-area">
 <select value={role} onChange={e=>changeRole(e.target.value as typeof role)}>
@@ -241,7 +241,7 @@ async function share(goNext=false){if(!song.server)return;const c=canvasRef.curr
 <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="연주할 때 기억할 내용을 적어주세요."/>
 </aside>
 <div ref={sheetScrollRef} className="sheet-scroll" onTouchStart={e=>{if(e.touches.length===2)pinchRef.current=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)}} onTouchMove={e=>{if(e.touches.length!==2||!pinchRef.current)return;const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),ratio=d/pinchRef.current;if(ratio>1.08){setZoom(z=>Math.min(250,z+10));pinchRef.current=d}else if(ratio<.92){setZoom(z=>Math.max(50,z-10));pinchRef.current=d}}}>
-<div className={`music-sheet ${song.server?"server-sheet":""}`} style={song.server?{width:`${fitSize.width*zoom/100}px`,height:`${fitSize.height*zoom/100}px`,maxWidth:"none",aspectRatio:`${imageSize.width}/${imageSize.height}`}:{width:`${zoom}%`,maxWidth:zoom===100?"760px":"none",aspectRatio:`${imageSize.width}/${imageSize.height}`}}>{song.server&&<img className="score-image" data-song={song.id} src={`/api/songs/${song.id}/file?kind=${canShare?backgroundKind:song.annotated?"annotated":"original"}&v=${song.version}`} alt={`${song.title} 악보`} onLoad={e=>{const img=e.currentTarget;if(img.naturalWidth&&img.naturalHeight){setImageSize({width:img.naturalWidth,height:img.naturalHeight});setImageReady(true)}}}/>} {!song.server&&<div className="sheet-title">
+<div className={`music-sheet ${song.server?"server-sheet":""}`} style={song.server?{width:`${fitSize.width*zoom/100}px`,height:`${fitSize.height*zoom/100}px`,maxWidth:"none",aspectRatio:`${imageSize.width}/${imageSize.height}`}:{width:`${zoom}%`,maxWidth:zoom===100?"760px":"none",aspectRatio:`${imageSize.width}/${imageSize.height}`}}>{song.server&&<img className="score-image" data-song={song.id} src={`/api/songs/${song.id}/file?kind=${canShare?backgroundKind:song.annotated?"annotated":"original"}&v=${song.version}`} alt={`${song.title} 악보`} onLoad={e=>{const img=e.currentTarget;delete img.dataset.retry;if(img.naturalWidth&&img.naturalHeight){setImageSize({width:img.naturalWidth,height:img.naturalHeight});setImageReady(true)}}} onError={e=>{const img=e.currentTarget,retry=Number(img.dataset.retry||0);if(retry<2){img.dataset.retry=String(retry+1);setTimeout(()=>{img.src=`${img.src.split("&retry=")[0]}&retry=${Date.now()}`},500*(retry+1))}}}/>} {!song.server&&<div className="sheet-title">
 <small>ONMAMDAHAE WORSHIP · KEY {song.key}</small>
 <h1>{song.title}</h1>
 <p>{song.artist} · {song.bpm} BPM</p>
