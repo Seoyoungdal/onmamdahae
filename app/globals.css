@@ -44,3 +44,5 @@
 .viewer-arrow{width:40px;height:64px;background:#1118;font-size:36px;opacity:.14;animation:viewerArrowFade 2.4s ease-out;transition:opacity .2s}
 .score-stage:hover .viewer-arrow,.viewer-arrow:focus-visible{opacity:.72}
 @keyframes viewerArrowFade{0%,45%{opacity:.72}100%{opacity:.14}}
+.paste-zone textarea{width:min(360px,78vw);height:48px;resize:none;border:1px solid #cfc3b6;border-radius:6px;background:#fff;padding:14px;text-align:center;font:inherit;color:var(--ink)}
+.paste-pick{justify-self:center;padding:11px 18px}
