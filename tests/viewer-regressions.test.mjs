@@ -9,8 +9,11 @@ test('viewer does not invoke Home-scoped image normalizer',()=>{
  assert.ok(viewer.includes('setSrc(items[index]?.url'));
 });
 test('mobile playlist explicitly overrides hidden outline controls',()=>assert.match(css,/\.detail-actions \.playlist-link\{display:inline-flex!important/));
-test('both print sections open closable in-app preview',()=>{
- assert.equal((page.match(/onClick=\{\(\)=>setPrintPreview\(`/g)||[]).length,2);
- assert.ok(page.includes('← 콘티로 돌아가기'));
- assert.ok(page.includes('preview=1'));
+test('print downloads have no preview and choose location when supported',()=>{
+ assert.ok(!page.includes('PrintPreview'));
+ assert.ok(!page.includes('<iframe'));
+ assert.equal((page.match(/onClick=\{\(\)=>preparePrintSave\(/g)||[]).length,2);
+ assert.ok(page.includes('showSaveFilePicker({suggestedName:file.name})'));
+ assert.ok(page.includes('r.body.pipeTo(writable)'));
+ assert.ok(page.includes('e.name==="AbortError"'));
 });

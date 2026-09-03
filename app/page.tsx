@@ -16,11 +16,23 @@ const initialSongs:Song[]=[
 const holidays2026:Record<string,string>={"2026-01-01":"신정","2026-02-16":"설날 연휴","2026-02-17":"설날","2026-02-18":"설날 연휴","2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"부처님오신날","2026-05-25":"대체공휴일","2026-06-03":"지방선거일","2026-06-06":"현충일","2026-08-15":"광복절","2026-08-17":"대체공휴일","2026-09-24":"추석 연휴","2026-09-25":"추석","2026-09-26":"추석 연휴","2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"성탄절"};
 export default function Home(){
  const[selected,setSelected]=useState<Service|null>(null),[services,setServices]=useState(initialServices),[songs,setSongs]=useState(initialSongs),[notice,setNotice]=useState(""),[role,setRole]=useState<"leader"|"member"|"admin">("member"),[memoSong,setMemoSong]=useState<number|null>(null),[editingSong,setEditingSong]=useState<Song|null>(null),[calendarMonth,setCalendarMonth]=useState(()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),1)}),[dragged,setDragged]=useState<number|null>(null),[dayPicker,setDayPicker]=useState<Service[]|null>(null),[viewer,setViewer]=useState<Array<{songId:number;title:string;url:string;kind:string}>|null>(null),[viewerIndex,setViewerIndex]=useState(0),[scorePicker,setScorePicker]=useState<"download"|"view"|null>(null),[scoreSection,setScoreSection]=useState<"all"|"worship"|"prayer">("all"),[scoreChecks,setScoreChecks]=useState<Record<number,boolean>>({}),[scoreKinds,setScoreKinds]=useState<Record<number,ScoreKind>>({}),[downloading,setDownloading]=useState<string|null>(null),[pasteOpen,setPasteOpen]=useState(false),uploadRef=useRef<HTMLInputElement>(null),prayerUploadRef=useRef<HTMLInputElement>(null),printRef=useRef<HTMLInputElement>(null),songsRef=useRef(songs);
- const[printPreview,setPrintPreview]=useState<string|null>(null);
+ const[printSave,setPrintSave]=useState<{url:string;name:string}|null>(null);
  const[versionPrompt,setVersionPrompt]=useState<{song:Song;kind:"original"|"annotated";current:boolean}|null>(null);
  const monthLabel=useMemo(()=>`${calendarMonth.getFullYear()}년 ${calendarMonth.getMonth()+1}월`,[calendarMonth]);
  useEffect(()=>{fetch("/api/bootstrap").then(async r=>{if(!r.ok)return;const d=await r.json();setRole(d.user.role);const assignments=d.assignments||[];const loadedServices=(d.services||[]).map((s:any,i:number)=>({id:s.id,date:s.service_date,time:s.service_time,title:s.title,type:s.title.replace("예배",""),leader:s.leader_name||undefined,tone:["navy","orange","mint","violet","blue"][i%5],location:s.location||"본당",playlist:s.playlist_url||"",printName:s.print_name||undefined,assignments:assignments.filter((a:any)=>a.service_id===s.id).map((a:any)=>({part:a.part,name:a.member_name}))}));if(loadedServices.length)setServices(loadedServices);const uploaded=(d.songs||[]).map((s:any)=>({id:s.id,serviceId:s.service_id,title:s.title,artist:"",key:s.song_key,bpm:s.bpm,file:s.original_name,version:`v${s.version}`,updated:new Date(s.updated_at).toLocaleDateString("ko-KR"),ref:s.reference_url,note:"",server:true,annotated:!!s.annotated_name}));if(uploaded.length)setSongs(uploaded)})},[]);
  useEffect(()=>{songsRef.current=songs},[songs]);
+ function browserPrintDownload(url:string){const a=document.createElement("a");a.href=url;a.download="";a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove()}
+ async function preparePrintSave(url:string){
+  if(typeof (window as any).showSaveFilePicker!=="function"){browserPrintDownload(url);flash("저장 위치는 브라우저 다운로드 설정을 따릅니다.");return}
+  setDownloading("출력용 악보 확인중…");
+  try{const r=await fetch(url+(url.includes("?")?"&":"?")+"metadata=1");if(!r.ok)throw new Error(await r.text());const d=await r.json();setPrintSave({url,name:d.name})}catch(e){flash(e instanceof Error?e.message:"파일을 확인하지 못했습니다.")}finally{setDownloading(null)}
+ }
+ async function savePrintFile(file:{url:string;name:string}){
+  let handle;
+  try{handle=await (window as any).showSaveFilePicker({suggestedName:file.name})}catch(e){if(e instanceof Error&&e.name==="AbortError")return;flash("저장 위치 선택을 사용할 수 없어 기본 다운로드로 엽니다.");browserPrintDownload(file.url);setPrintSave(null);return}
+  setPrintSave(null);setDownloading("출력용 악보 다운로드중…");
+  try{const r=await fetch(file.url);if(!r.ok)throw new Error(await r.text());if(!r.body)throw new Error("파일 내용이 없습니다.");const writable=await handle.createWritable();await r.body.pipeTo(writable);flash("선택한 위치에 저장했습니다.")}catch(e){flash(e instanceof Error?e.message:"파일을 저장하지 못했습니다.")}finally{setDownloading(null)}
+ }
  function flash(m:string){setNotice(m);setTimeout(()=>setNotice(""),2400)}
  function download(song:Song){const blob=new Blob([`${song.title}\n키 ${song.key} · ${song.bpm} BPM\n\n인도자 메모: ${song.note}`],{type:"text/plain;charset=utf-8"});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`${song.file}_${song.version}.txt`;a.click();URL.revokeObjectURL(url);flash("내 장치에 악보 사본을 저장했습니다.")}
  function reorder(target:number){if(dragged===null||dragged===target)return;setSongs(current=>{const next=[...current],from=next.findIndex(s=>s.id===dragged),to=next.findIndex(s=>s.id===target);if(from<0||to<0)return current;const[item]=next.splice(from,1);next.splice(to,0,item);songsRef.current=next;return next})}
@@ -71,7 +83,7 @@ export default function Home(){
  }
  const year=calendarMonth.getFullYear(),month=calendarMonth.getMonth(),firstDay=new Date(year,month,1).getDay(),daysInMonth=new Date(year,month+1,0).getDate(),prevMonthDays=new Date(year,month,0).getDate(),visibleSongs=selected?songs.filter(song=>!song.server||song.serviceId===selected.id):[],prayerStart=visibleSongs.findIndex(song=>song.title.startsWith(PRAYER_PREFIX));
  return <main className="app-shell">
-  {printPreview&&<PrintPreview url={printPreview} onClose={()=>setPrintPreview(null)}/>}
+  {printSave&&<div className="modal-back"><div className="memo-modal" role="dialog" aria-modal="true" aria-label="출력용 악보 저장"><h2>출력용 악보 저장</h2><p>{printSave.name}</p><div><button className="outline" onClick={()=>setPrintSave(null)}>취소</button><button className="primary" onClick={()=>savePrintFile(printSave)}>저장 위치 선택</button></div></div></div>}
   {editingSong&&<SongEditModal song={editingSong} onCancel={()=>setEditingSong(null)} onSave={saveSongEdit}/>} 
   <header className="topbar">
 <button className="brand" onClick={()=>setSelected(null)}>
@@ -81,7 +93,7 @@ export default function Home(){
 <small>WORSHIP TOGETHER</small>
 </span>
 </button>
-<span className="app-version">v2.5.7</span>
+<span className="app-version">v2.5.8</span>
 <nav><button className="nav-active">캘린더</button></nav>
 <div className="user-area">
 <select value={role} onChange={e=>changeRole(e.target.value as typeof role)}>
@@ -194,8 +206,8 @@ export default function Home(){
 <div>
 <b>출력용 악보</b>
 <p>축소하지 않은 원본 크기로 보관하고 다운로드합니다.</p>{selected.printName&&<span>✓ {selected.printName}</span>}</div>
-<input ref={printRef} className="hidden-file" type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f)uploadPrint(f);e.target.value=""}}/><div className="print-actions">{role!=="member"&&<button className="outline" onClick={()=>printRef.current?.click()}>출력용 원본 업로드</button>}{selected.printName&&<button className="primary print-download" onClick={()=>setPrintPreview(`/api/services/${selected.id}/print`)}>출력용 악보 다운로드</button>}</div></div>
-<div className="print-score prayer-print"><div><b>기도회 출력용 악보</b><p>기도회 찬양 출력본을 일반 예배 출력본과 별도로 보관합니다.</p></div><input className="hidden-file" id={`prayer-print-${selected.id}`} type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f)uploadPrint(f,"prayer");e.target.value=""}}/><div className="print-actions">{role!=="member"&&<button className="outline" onClick={()=>document.getElementById(`prayer-print-${selected.id}`)?.click()}>기도회 출력본 업로드</button>}<button className="primary print-download" onClick={()=>setPrintPreview(`/api/services/${selected.id}/print?kind=prayer`)}>기도회 출력본 다운로드</button></div></div>
+<input ref={printRef} className="hidden-file" type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f)uploadPrint(f);e.target.value=""}}/><div className="print-actions">{role!=="member"&&<button className="outline" onClick={()=>printRef.current?.click()}>출력용 원본 업로드</button>}{selected.printName&&<button className="primary print-download" onClick={()=>preparePrintSave(`/api/services/${selected.id}/print`)}>출력용 악보 다운로드</button>}</div></div>
+<div className="print-score prayer-print"><div><b>기도회 출력용 악보</b><p>기도회 찬양 출력본을 일반 예배 출력본과 별도로 보관합니다.</p></div><input className="hidden-file" id={`prayer-print-${selected.id}`} type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0];if(f)uploadPrint(f,"prayer");e.target.value=""}}/><div className="print-actions">{role!=="member"&&<button className="outline" onClick={()=>document.getElementById(`prayer-print-${selected.id}`)?.click()}>기도회 출력본 업로드</button>}<button className="primary print-download" onClick={()=>preparePrintSave(`/api/services/${selected.id}/print?kind=prayer`)}>기도회 출력본 다운로드</button></div></div>
 <div className="tip">
 <b>악보 종류 선택</b>
 <p>전체 다운로드와 악보 보기에서 곡마다 원본·인도자 표시본·내 표시본을 선택할 수 있습니다.</p>
@@ -318,11 +330,5 @@ async function mergePersonalDrawing(base:Blob,songId:number){
 async function mergeLayerBlobs(base:Blob,layer:Blob){
  const load=(src:string)=>new Promise<HTMLImageElement>((ok,fail)=>{const img=new Image();img.onload=()=>ok(img);img.onerror=()=>fail(new Error("악보 이미지를 불러오지 못했습니다."));img.src=src}),baseUrl=URL.createObjectURL(base),layerUrl=URL.createObjectURL(layer);
  try{const [score,marks]=await Promise.all([load(baseUrl),load(layerUrl)]);if(score.naturalWidth!==marks.naturalWidth||score.naturalHeight!==marks.naturalHeight)throw new Error("원본과 표시 레이어의 크기가 달라 다시 공유해야 합니다.");const out=document.createElement("canvas");out.width=score.naturalWidth;out.height=score.naturalHeight;const ctx=out.getContext("2d")!;ctx.fillStyle="#fff";ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(score,0,0);ctx.drawImage(marks,0,0);return await new Promise<Blob>(resolve=>out.toBlob(blob=>resolve(blob||base),"image/png"))}finally{URL.revokeObjectURL(baseUrl);URL.revokeObjectURL(layerUrl)}
-}
-
-
-function PrintPreview({url,onClose}:{url:string;onClose:()=>void}){
- useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==="Escape")onClose()};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key)},[onClose]);
- return <div className="print-preview" role="dialog" aria-modal="true" aria-label="출력용 악보 미리보기"><header><button className="outline" onClick={onClose}>← 콘티로 돌아가기</button><a className="primary" href={url} target="_blank" rel="noopener noreferrer">파일 저장 / 열기 ↗</a></header><p>파일 저장은 새 창에서 열립니다. 미리보기를 마치면 위의 돌아가기 버튼을 눌러 주세요.</p><iframe title="출력용 악보" src={`${url}${url.includes("?")?"&":"?"}preview=1`}/></div>
 }
 
