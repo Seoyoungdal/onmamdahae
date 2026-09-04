@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+const config=readFileSync(new URL('../next.config.ts',import.meta.url),'utf8');
+test('score images are reduced below the request-body safety threshold',()=>{
+ assert.ok(page.includes('const target=850*1024'));
+ assert.ok(page.includes('blob.size>950*1024'));
+ assert.ok(config.includes('bodySizeLimit: "20mb"'));
+});
 test('batch upload continues after third image fails and uses one request at a time',async()=>{
  const source=page.slice(page.indexOf(' async function uploadScores('),page.indexOf(' async function',page.indexOf(' async function uploadScores(')+2));
  const js=ts.transpile(source,{target:ts.ScriptTarget.ES2022});

@@ -46,12 +46,21 @@ export default function Home(){
  async function deleteService(){if(!selected||!confirm(`‘${selected.title}’ 예배를 삭제할까요?\n포함된 모든 곡과 악보도 함께 삭제되며 되돌릴 수 없습니다.`))return;const id=selected.id,res=await fetch(`/api/services/${id}`,{method:"DELETE"});if(!res.ok){flash(await res.text());return}await deleteServiceScores(id);setServices(v=>v.filter(s=>s.id!==id));setSongs(v=>v.filter(s=>s.serviceId!==id));setSelected(null);flash("예배와 포함된 악보를 삭제했습니다.")}
  async function changeRole(next:"leader"|"member"|"admin"){if(next==="member"){const res=await fetch("/api/role",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:next})});if(res.ok)setRole(next);return}while(true){const password=prompt(`${next==="admin"?"관리자":"인도자"} 비밀번호를 입력해 주세요.`);if(password===null)return;const res=await fetch("/api/role",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:next,password})});if(res.ok){setRole(next);flash(`${next==="admin"?"관리자":"인도자"}로 전환했습니다.`);return}alert(await res.text())}}
  async function fitForTablet(file:File){
-  const img=new Image(),url=URL.createObjectURL(file);
+ const img=new Image(),url=URL.createObjectURL(file);
   try{await new Promise<void>((ok,fail)=>{img.onload=()=>ok();img.onerror=()=>fail(new Error("이미지를 읽을 수 없습니다. JPG 또는 PNG로 변환해 주세요."));img.src=url});
-   const max=2400,ratio=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
-   if(ratio===1&&["image/jpeg","image/png"].includes(file.type)&&file.size<=15*1024*1024)return file;
-   const canvas=document.createElement("canvas");canvas.width=Math.round(img.naturalWidth*ratio);canvas.height=Math.round(img.naturalHeight*ratio);
-   try{const ctx=canvas.getContext("2d");if(!ctx)throw new Error("이미지 변환을 시작하지 못했습니다.");ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await new Promise<Blob|null>(r=>canvas.toBlob(r,"image/jpeg",.9));if(!blob)throw new Error("이미지 변환에 실패했습니다.");return new File([blob],file.name.replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"})}finally{canvas.width=0;canvas.height=0}
+   const target=850*1024,max=2200,initial=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+   if(file.size<=target&&initial===1&&["image/jpeg","image/png"].includes(file.type))return file;
+   const canvas=document.createElement("canvas");
+   try{let scale=initial,quality=.86,blob:Blob|null=null;
+    for(let attempt=0;attempt<7;attempt++){
+     canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+     const ctx=canvas.getContext("2d");if(!ctx)throw new Error("이미지 변환을 시작하지 못했습니다.");ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+     blob=await new Promise<Blob|null>(r=>canvas.toBlob(r,"image/jpeg",quality));if(blob&&blob.size<=target)break;
+     if(quality>.62)quality-=.08;else scale*=.85;
+    }
+    if(!blob)throw new Error("이미지 변환에 실패했습니다.");if(blob.size>950*1024)throw new Error("이미지를 전송 가능한 크기로 줄이지 못했습니다.");
+    return new File([blob],file.name.replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"})
+   }finally{canvas.width=0;canvas.height=0}
   }finally{img.src="";URL.revokeObjectURL(url)}
  }
  async function uploadScores(files:FileList|File[]):Promise<File[]>{
@@ -116,7 +125,7 @@ export default function Home(){
 <small>WORSHIP TOGETHER</small>
 </span>
 </button>
-<span className="app-version">v2.5.9</span>
+<span className="app-version">v2.5.10</span>
 <nav><button className="nav-active">캘린더</button></nav>
 <div className="user-area">
 <select value={role} onChange={e=>changeRole(e.target.value as typeof role)}>
