@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+const page=readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');
+test('batch upload continues after third image fails and uses one request at a time',async()=>{
+ const source=page.slice(page.indexOf(' async function uploadScores('),page.indexOf(' async function',page.indexOf(' async function uploadScores(')+2));
+ const js=ts.transpile(source,{target:ts.ScriptTarget.ES2022});
+ let songs=[],errors=[],active=0,maxActive=0;
+ const factory=new Function('selected','uploadBusy','setUploadErrors','setDownloading','fitForTablet','fetch','setSongs','flash',js+';return uploadScores;');
+ const upload=factory({id:13},{current:false},e=>errors=e,()=>{},async file=>{if(file.name==='3.png')throw new Error('bad image');return file},async(_url,{body})=>{active++;maxActive=Math.max(maxActive,active);await new Promise(r=>setTimeout(r,2));active--;return Response.json({id:Number(body.get('title')),service_id:13,title:body.get('title'),version:1})},fn=>songs=fn(songs),()=>{});
+ const files=[1,2,3,4,5].map(n=>new File(['image'],`${n}.png`,{type:'image/png'}));
+ const failed=await upload(files);
+ assert.equal(songs.length,4);assert.equal(maxActive,1);assert.deepEqual(failed,[files[2]]);assert.match(errors[0],/3.png: bad image/);
+});
+test('sharing encodes service and bootstrap opens the matching service',()=>{
+ assert.ok(page.includes('url.searchParams.set("service",String(selected.id))'));
+ assert.ok(page.includes('searchParams.get("service")'));
+ assert.ok(page.includes('setSelected(shared)'));
+ assert.ok(page.includes('const failed=await onSave(files)'));
+});
